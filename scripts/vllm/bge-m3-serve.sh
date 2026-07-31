@@ -2,17 +2,27 @@
 # ============================================================
 # bge-m3 — multilingual embedding (pooling runner) @ :8003
 # ============================================================
-# 운영 서버 실측 serve 명령 기준 (2026-05-29 동기화).
-# venv: /home/smith/vllm/vllm_env (embedding 전용 — qwen 과 별도 venv)
+# DGX 실측 serve 명령 기준 (2026-07-31 동기화 — LiteLLM Mac 이전 후 vLLM 전용 plane).
+# 실행 주체: DGX 의 PM2 (vllm-embed). venv: /home/smith/vllm/vllm_env (embedding 전용).
+# 보안·바인딩 원칙은 qwen-serve.sh 헤더 참고 (VLLM_API_KEY env / VLLM_BIND_HOST Tailscale).
 set -euo pipefail
 
 MODEL_DIR="${BGE_MODEL_DIR:-/home/smith/models/bge-m3}"
 
+set -a; [ -f /home/smith/vllm/vllm.env ] && . /home/smith/vllm/vllm.env; set +a
+
+VLLM_BIND_HOST="${VLLM_BIND_HOST:-127.0.0.1}"
+if [ "$VLLM_BIND_HOST" != "127.0.0.1" ] && [ "$VLLM_BIND_HOST" != "0.0.0.0" ]; then
+  for i in $(seq 1 60); do
+    ip -4 addr show 2>/dev/null | grep -q "inet ${VLLM_BIND_HOST}/" && break
+    echo "[bind-wait] waiting for ${VLLM_BIND_HOST} ($i/60)"; sleep 2
+  done
+fi
+
 exec vllm serve "$MODEL_DIR" \
   --runner pooling \
   --port 8003 \
-  --host 127.0.0.1 \
+  --host "$VLLM_BIND_HOST" \
   --served-model-name bge-m3 \
   --enforce-eager \
-  --gpu-memory-utilization 0.15 \
-  --api-key "${VLLM_API_KEY:-sk-vllm}"
+  --gpu-memory-utilization 0.05
